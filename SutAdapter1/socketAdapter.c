@@ -11,6 +11,7 @@
 	#include <arpa/inet.h>
 	#include <pthread.h>
 	#include <netinet/tcp.h>
+	#include <fcntl.h> 
 #elif _WIN32
 	#include <winsock2.h>
 	#include <windows.h>
@@ -116,6 +117,23 @@ void send_ok() {
 	}
 }
 
+void set_socket_nonblocking(int socket) {
+    #ifdef _WIN32
+        unsigned long mode = 1;
+        ioctlsocket(socket, FIONBIO, &mode);
+    #elif defined(__gnu_linux__) || defined(__sun)
+        int flags = fcntl(socket, F_GETFL, 0);
+        if (flags == -1) {
+            perror("fcntl F_GETFL");
+            exit(EXIT_FAILURE);
+        }
+        if (fcntl(socket, F_SETFL, flags | O_NONBLOCK) == -1) {
+            perror("fcntl F_SETFL");
+            exit(EXIT_FAILURE);
+        }
+    #endif
+}
+
 #ifdef _WIN32
 DWORD WINAPI do_connect(void *arg)
 #elif defined(__gnu_linux__) || defined(__sun)
@@ -181,6 +199,8 @@ void *do_accept(void *arg) {
 #ifdef __gnu_linux__
 		setsockopt(secondary_sd, IPPROTO_TCP, TCP_QUICKACK, (void *)&i, sizeof(i));
 #endif
+		 //设置 secondary_sd 为非阻塞模式
+        	set_socket_nonblocking(secondary_sd);
 	} else { 
 		printf("accept failed\n");
 		//answer("NOK\n");
@@ -292,6 +312,9 @@ void init_run() {
 		printf("creating socket failed\n");
 		error("could not open new socket\n");
 	}
+
+	// 设置 main_sd 为非阻塞模式
+   	set_socket_nonblocking(main_sd);
 	
 	printf("initializing server address\n");
 	struct hostent *server = gethostbyname(server_addr);
